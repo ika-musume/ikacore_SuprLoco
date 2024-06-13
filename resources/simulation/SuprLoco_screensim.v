@@ -9,6 +9,8 @@ module SuprLoco_screensim
     input   wire    [2:0]   i_VIDEO_B
 );
 
+parameter PATH = "D:/cores/ikacore_SuprLoco/rtl/frames/";
+
 wire                clk40m = i_EMU_MCLK;
 wire                clk5m_ncen = i_VIDEO_CEN;
 
@@ -60,7 +62,7 @@ always @(posedge clk40m) if(clk5m_ncen) begin
             if(vcntr == 9'd223 && hcntr == 9'd266) begin
                 BITMAP_LINE_ADDRESS = 32'h29D36; //reset line
 
-                fd = $fopen($sformatf("suprloco_frame%0d.bmp", frame), "wb"); //generate new file
+                fd = $fopen($sformatf({PATH, "suprloco_frame%0d.bmp"}, frame), "wb"); //generate new file
 
                 for(i = 0; i < 54; i = i + 1) begin //write bitmap header
                     $fwrite(fd, "%c", BITMAP_HEADER[i]);

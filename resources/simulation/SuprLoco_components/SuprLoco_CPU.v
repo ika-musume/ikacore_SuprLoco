@@ -21,10 +21,11 @@ module SuprLoco_CPU (
 //////  Decrypter
 ////
 
-wire            decr_en = ~o_ADDR[15] & ~o_IORQ_n;
+wire            decr_en = ~o_ADDR[15] & ~o_MREQ_n;
 reg     [7:0]   dd;
 wire    [6:0]   decrtable_addr = {o_ADDR[12], o_ADDR[8], o_ADDR[4], o_ADDR[0], o_M1_n, i_DI[5] ^ i_DI[7], i_DI[3] ^ i_DI[7]};
 wire    [7:0]   decrtable_data = decr_en ? {dd[7] ^ i_DI[7], i_DI[6], dd[5] ^ i_DI[7], i_DI[4], dd[3] ^ i_DI[7], i_DI[2:0]} : i_DI;
+
 always @(posedge i_CLK) begin
     case(decrtable_addr)
         //OPCODE
@@ -82,7 +83,7 @@ T80pa maincpu (
     .RD_n                       (o_RD_n                     ),
     .WR_n                       (o_WR_n                     ),
     .A                          (o_ADDR                     ),
-    .DI                         (i_DI                       ),
+    .DI                         (decrtable_data             ),
     .DO                         (o_DO                       ),
     .IORQ_n                     (o_IORQ_n                   ),
     .M1_n                       (o_M1_n                     ),

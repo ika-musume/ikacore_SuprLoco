@@ -69,6 +69,166 @@ end
 
 
 ///////////////////////////////////////////////////////////
+//////  Main CPU
+////
+
+//main CPU prescaler
+wire            mcpu_m1_n;
+reg     [2:0]   mcpu_prescaler;
+wire            mcpu_pcen = (mcpu_prescaler == 3'b011) & clk20m_pcen;
+wire            mcpu_ncen = (mcpu_prescaler == 3'b101) & clk20m_pcen;
+always @(posedge clk40m) begin
+    if(!mrst_n) mcpu_prescaler <= 3'b111;
+    else begin if(clk20m_pcen) begin
+        mcpu_prescaler <= (mcpu_prescaler == 3'b111) ? {2'b01, mcpu_m1_n} : mcpu_prescaler + 3'd1;
+    end end
+end
+
+//buses
+wire    [15:0]  mcpu_addr;
+wire    [7:0]   mcpu_wrbus;
+reg     [7:0]   mcpu_rdbus;
+wire            mcpu_rd_n, mcpu_wr_n;
+
+//wait until tilemap data writing is done
+wire            mcpu_mreq_n;
+reg             mcpu_wait_n;
+
+//misc
+wire            mcpu_rfsh;
+wire            mcpu_int_n;
+
+SuprLoco_CPU u_mcpu (
+    .i_CLK                      (clk40m                     ),
+    .i_RST_n                    (mrst_n                     ),
+    
+    .i_PCEN                     (mcpu_pcen                  ),
+    .i_NCEN                     (mcpu_ncen                  ),
+
+    .i_WAIT_n                   (mcpu_wait_n                ),
+    .i_INT_n                    (mcpu_int_n                 ),
+    .i_NMI_n                    (1'b1                       ),
+
+    .o_RD_n                     (mcpu_rd_n                  ),
+    .o_WR_n                     (mcpu_wr_n                  ),
+    .o_IORQ_n                   (                           ),
+    .o_MREQ_n                   (mcpu_mreq_n                ),
+    .o_M1_n                     (mcpu_m1_n                  ),
+    .o_ADDR                     (mcpu_addr                  ),
+    .o_DO                       (mcpu_wrbus                 ),
+    .i_DI                       (mcpu_rdbus                 ),
+
+    .i_BUSRQ_n                  (1'b1                       ),
+    .o_BUSAK_n                  (                           ),
+
+    .o_RFSH_n                   (mcpu_rfsh                  ),
+    .o_HALT_n                   (                           )
+);
+
+//address decoder
+localparam  PGMROM0 = 0;
+localparam  PGMROM1 = 1;
+localparam  DATAROM = 2;
+localparam  OBJRAM  = 3;
+localparam  TMRAM   = 4;
+localparam  MAINRAM = 5;
+localparam  IO_SYS  = 6;
+localparam  IO_P1   = 7;
+localparam  IO_P2   = 8;
+localparam  IO_DIP  = 9;
+localparam  IO_PPI  = 10;
+localparam  INVALID = 11;
+
+reg     [3:0]   active_device_id;
+reg             ram_en;
+
+always @(*) begin
+    ram_en = 1'b0;
+    active_device_id = INVALID;
+
+    if(mcpu_rfsh) begin
+        case(mcpu_addr[15:14])
+            2'b00: active_device_id = PGMROM0;
+            2'b01: active_device_id = PGMROM1;
+            2'b10: active_device_id = DATAROM;
+            2'b11: ram_en = 1'b1;
+        endcase
+    end
+
+    if(ram_en) begin
+        case(mcpu_addr[13:11])
+            3'b000: active_device_id = OBJRAM;
+            3'b001: active_device_id = IO_SYS;
+            3'b010: active_device_id = IO_P1;
+            3'b011: active_device_id = IO_P2;
+            3'b100: active_device_id = IO_DIP;
+            3'b101: active_device_id = IO_PPI;
+            3'b110: active_device_id = TMRAM;
+            3'b111: active_device_id = MAINRAM;
+        endcase
+    end
+end
+
+
+
+///////////////////////////////////////////////////////////
+//////  Main CPU ROM/RAM devices
+////
+
+wire    [7:0]   pgmrom0_do, pgmrom1_do, datarom_do, mainram_do;
+
+SuprLoco_PROM #(.AW(14), .DW(8), .simhexfile({PATH, "epr-5226.txt"})) u_pgmrom0 (
+    .i_MCLK                     (clk40m                     ),
+
+    .i_PROG_ADDR                (                           ),
+    .i_PROG_DIN                 (                           ),
+    .i_PROG_CS                  (1'b0                       ),
+    .i_PROG_WR                  (                           ),
+
+    .i_ADDR                     (mcpu_addr[13:0]            ),
+    .o_DOUT                     (pgmrom0_do                 ),
+    .i_RD                       (active_device_id == PGMROM0)
+);
+
+SuprLoco_PROM #(.AW(14), .DW(8), .simhexfile({PATH, "epr-5227.txt"})) u_pgmrom1 (
+    .i_MCLK                     (clk40m                     ),
+
+    .i_PROG_ADDR                (                           ),
+    .i_PROG_DIN                 (                           ),
+    .i_PROG_CS                  (1'b0                       ),
+    .i_PROG_WR                  (                           ),
+
+    .i_ADDR                     (mcpu_addr[13:0]            ),
+    .o_DOUT                     (pgmrom1_do                 ),
+    .i_RD                       (active_device_id == PGMROM1)
+);
+
+SuprLoco_PROM #(.AW(14), .DW(8), .simhexfile({PATH, "epr-5228.txt"})) u_datarom (
+    .i_MCLK                     (clk40m                     ),
+
+    .i_PROG_ADDR                (                           ),
+    .i_PROG_DIN                 (                           ),
+    .i_PROG_CS                  (1'b0                       ),
+    .i_PROG_WR                  (                           ),
+
+    .i_ADDR                     (mcpu_addr[13:0]            ),
+    .o_DOUT                     (datarom_do                 ),
+    .i_RD                       (active_device_id == DATAROM)
+);
+
+SuprLoco_SRAM #(.AW(11), .DW(8), .simhexfile()) u_mainram (
+    .i_MCLK                     (clk40m                     ),
+
+    .i_ADDR                     (mcpu_addr[10:0]            ),
+    .i_DIN                      (mcpu_wrbus                 ),
+    .o_DOUT                     (mainram_do                 ),
+    .i_RD                       ((active_device_id == MAINRAM) && ~mcpu_rd_n),
+    .i_WR                       ((active_device_id == MAINRAM) && ~mcpu_wr_n)
+);
+
+
+
+///////////////////////////////////////////////////////////
 //////  Video timing generator
 ////
 
@@ -115,7 +275,7 @@ SuprLoco_PAL16R4_PA5017 u_pa5017 (
 );
 
 
-wire            blank, irq_n;
+wire            blank;
 SuprLoco_PAL16R4_PA5016 u_pa5016 (
     .i_MCLK                     (clk40m                     ),
     .i_RST_n                    (mrst_n                     ),
@@ -130,19 +290,8 @@ SuprLoco_PAL16R4_PA5016 u_pa5016 (
     .o_VBLANK                   (vblank                     ),
     .o_VBLANK_PNCEN_n           (                           ),
     .o_BLANK                    (blank                      ),
-    .o_IRQ_n                    (irq_n                      )
+    .o_IRQ_n                    (mcpu_int_n                 )
 );
-
-
-
-///////////////////////////////////////////////////////////
-//////  CPU
-////
-
-wire    [15:0]  maincpu_addr;
-wire    [7:0]   maincpu_wrbus, maincpu_rdbus;
-
-
 
 
 
@@ -152,7 +301,7 @@ wire    [7:0]   maincpu_wrbus, maincpu_rdbus;
 
 //tilemap sequencer control bits
 wire            tmram_wrtime_n; //tilemap write strobe for CPU access
-wire            maincpu_wait_clr_n;
+wire            mcpu_wait_clr_n;
 wire            htile_addr_lsb;
 wire            codelatch_lo_tick, codelatch_hi_tick;
 wire            dlylatch_tick;
@@ -165,17 +314,31 @@ wire            dlylatch_tick_pcen;
 wire            codelatch_lo_tick_pcen;
 wire            codelatch_hi_tick_pcen;
 
+//maincpu wait(asynchronous)
+reg             mreq_n_z;
+wire            mreg_nedet = mreq_n_z & ~mcpu_mreq_n;
+always @(posedge clk40m) begin
+    mreq_n_z <= mcpu_mreq_n;
+
+    if(!mcpu_wait_clr_n) mcpu_wait_n <= 1'b1;
+    else begin
+        if(mreg_nedet) mcpu_wait_n <= ~(active_device_id == TMRAM);
+    end
+end
+
 //tilemap/scroll ram
-wire    [7:0]   tmram_rdbus;
+wire    [7:0]   tmram_do;
 reg     [10:0]  tmram_addr;
-SuprLoco_SRAM #(.AW(11), .DW(8), .simhexfile({PATH, "tilemap.txt"})) u_tmram (
+wire            tmram_wr = (active_device_id == TMRAM) & ~mcpu_wr_n & ~tmram_wrtime_n;
+//SuprLoco_SRAM #(.AW(11), .DW(8), .simhexfile({PATH, "tilemap.txt"})) u_tmram (
+SuprLoco_SRAM #(.AW(11), .DW(8), .simhexfile()) u_tmram (
     .i_MCLK                     (clk40m                     ),
 
     .i_ADDR                     (tmram_addr                 ),
-    .i_DIN                      (maincpu_wrbus              ),
-    .o_DOUT                     (tmram_rdbus                ),
+    .i_DIN                      (mcpu_wrbus                 ),
+    .o_DOUT                     (tmram_do                   ),
     .i_RD                       (1'b1                       ),
-    .i_WR                       (1'b0                       )
+    .i_WR                       (tmram_wr                   )
 );
 
 //attribute latches
@@ -184,9 +347,9 @@ reg     [7:0]   codelatch_lo, codelatch_hi; //74LS273
 always @(posedge clk40m) begin
     if(!mrst_n) scrlatch <= 8'h00;
     else begin if(clk5m_ncen) begin
-        if(codelatch_lo_tick_pcen & ~scrlatch_en_n) scrlatch <= tmram_rdbus;
-        if(codelatch_lo_tick_pcen) codelatch_lo <= tmram_rdbus;
-        if(codelatch_hi_tick_pcen) codelatch_hi <= tmram_rdbus;
+        if(codelatch_lo_tick_pcen & ~scrlatch_en_n) scrlatch <= tmram_do;
+        if(codelatch_lo_tick_pcen) codelatch_lo <= tmram_do;
+        if(codelatch_hi_tick_pcen) codelatch_hi <= tmram_do;
     end end
 end
 
@@ -196,8 +359,8 @@ wire    [7:0]   scrval = hcntr + scrlatch;
 //tmram address selector
 always @(*) begin
     case(tmram_addrsel)
-        2'b00: tmram_addr = maincpu_addr[11:0];
-        2'b01: tmram_addr = maincpu_addr[11:0];
+        2'b00: tmram_addr = mcpu_addr[11:0];
+        2'b01: tmram_addr = mcpu_addr[11:0];
         2'b10: tmram_addr = {vcntr[7:3], scrval[7:3], htile_addr_lsb}; //htile index
         2'b11: tmram_addr = {6'b111111, vcntr[7:3]}; //scroll register address
     endcase
@@ -242,7 +405,7 @@ assign  codelatch_lo_tick = tmseqrom_273_device[1];
 assign  codelatch_hi_tick = tmseqrom_273_device[3];
 assign  dlylatch_tick = tmseqrom_273_device[4];
 assign  tmram_addrsel[1] = tmseqrom_273_device[5];
-assign  maincpu_wait_clr_n = tmseqrom_273_device[6];
+assign  mcpu_wait_clr_n = tmseqrom_273_device[6];
 assign  tmram_wrtime_n = tmseqrom_273_device[7];
 assign  tmsr_modesel = tmseqrom_data[7:6];
 
@@ -286,7 +449,7 @@ wire    [1:0]   palcode = codelatch_hi[4:3];
 wire            force_obj_top_n = codelatch_hi[5];
 
 //tilemap roms
-wire    [7:0]   tilerom0_q, tilerom1_q, tilerom2_q;
+wire    [7:0]   tilerom0_do, tilerom1_do, tilerom2_do;
 SuprLoco_PROM #(.AW(13), .DW(8), .simhexfile({PATH, "epr-5223.txt"})) u_tilerom0 (
     .i_MCLK                     (clk40m                     ),
 
@@ -296,7 +459,7 @@ SuprLoco_PROM #(.AW(13), .DW(8), .simhexfile({PATH, "epr-5223.txt"})) u_tilerom0
     .i_PROG_WR                  (                           ),
 
     .i_ADDR                     ({tilecode[9:0], vcntr[2:0]}),
-    .o_DOUT                     (tilerom0_q                 ),
+    .o_DOUT                     (tilerom0_do                ),
     .i_RD                       (1'b1                       )
 );
 SuprLoco_PROM #(.AW(13), .DW(8), .simhexfile({PATH, "epr-5224.txt"})) u_tilerom1 (
@@ -308,7 +471,7 @@ SuprLoco_PROM #(.AW(13), .DW(8), .simhexfile({PATH, "epr-5224.txt"})) u_tilerom1
     .i_PROG_WR                  (                           ),
 
     .i_ADDR                     ({tilecode[9:0], vcntr[2:0]}),
-    .o_DOUT                     (tilerom1_q                 ),
+    .o_DOUT                     (tilerom1_do                ),
     .i_RD                       (1'b1                       )
 );
 SuprLoco_PROM #(.AW(13), .DW(8), .simhexfile({PATH, "epr-5225.txt"})) u_tilerom2 (
@@ -320,7 +483,7 @@ SuprLoco_PROM #(.AW(13), .DW(8), .simhexfile({PATH, "epr-5225.txt"})) u_tilerom2
     .i_PROG_WR                  (                           ),
 
     .i_ADDR                     ({tilecode[9:0], vcntr[2:0]}),
-    .o_DOUT                     (tilerom2_q                 ),
+    .o_DOUT                     (tilerom2_do                ),
     .i_RD                       (1'b1                       )
 );
 
@@ -344,9 +507,9 @@ always @(posedge clk40m) if(clk5m_ncen) begin
             tilerom_299_device_c <= tilerom_299_device_c >> 1;
         end
         2'b11: begin 
-            tilerom_299_device_a <= tilerom0_q;
-            tilerom_299_device_b <= tilerom1_q;
-            tilerom_299_device_c <= tilerom2_q;
+            tilerom_299_device_a <= tilerom0_do;
+            tilerom_299_device_b <= tilerom1_do;
+            tilerom_299_device_c <= tilerom2_do;
         end
     endcase
 end
@@ -436,10 +599,10 @@ Sega_315_5012 u_315_5012_main (
     .i_DMAON_n                  (dmaon_n                    ),
     .i_ONELINE_n                (vcntr_ld_n                 ),
 
-    .i_AD                       (                           ),
-    .i_OBJ_n                    (1'b1                       ),
-    .i_RD_n                     (1'b1                       ),
-    .i_WR_n                     (1'b1                       ),
+    .i_AD                       (mcpu_addr[10:0]            ),
+    .i_OBJ_n                    (~(active_device_id == OBJRAM)),
+    .i_RD_n                     (mcpu_rd_n                  ),
+    .i_WR_n                     (mcpu_wr_n                  ),
 
     .o_BUFENH_n                 (bufhi_en_n                 ),
     .o_BUFENL_n                 (buflo_en_n                 ),
@@ -485,13 +648,13 @@ Sega_315_5011 u_315_5011_main (
 );
 
 //declare object attribute RAM(MBM2148 1k*4 SRAM x 4)
-wire    [15:0]  objram_q;
+wire    [15:0]  objram_do;
 SuprLoco_SRAM #(.AW(10), .DW(8), .simhexfile({PATH, "sprite_odd.txt"})) u_objramhi (
     .i_MCLK                     (clk40m                     ),
 
     .i_ADDR                     (objram_addr                ),
     .i_DIN                      (obj_attr_bus[15:8]         ),
-    .o_DOUT                     (objram_q[15:8]             ),
+    .o_DOUT                     (objram_do[15:8]             ),
     .i_RD                       (~objram_cs_n               ),
     .i_WR                       (~(objram_cs_n | objramhi_wr_n))
 );
@@ -501,7 +664,7 @@ SuprLoco_SRAM #(.AW(10), .DW(8), .simhexfile({PATH, "sprite_even.txt"})) u_objra
 
     .i_ADDR                     (objram_addr                ),
     .i_DIN                      (obj_attr_bus[7:0]          ),
-    .o_DOUT                     (objram_q[7:0]              ),
+    .o_DOUT                     (objram_do[7:0]              ),
     .i_RD                       (~objram_cs_n               ),
     .i_WR                       (~(objram_cs_n | objramlo_wr_n))
 );
@@ -509,12 +672,13 @@ SuprLoco_SRAM #(.AW(10), .DW(8), .simhexfile({PATH, "sprite_even.txt"})) u_objra
 //object attribute bus: there are two sources
 always @(*) begin
     if(ro_do_oe) obj_attr_bus = ro_do;
-    else if(~objram_cs_n) obj_attr_bus = objram_q;
+    else if(~(bufhi_en_n & buflo_en_n)) obj_attr_bus = {mcpu_wrbus, mcpu_wrbus};
+    else if(~objram_cs_n) obj_attr_bus = objram_do;
     else obj_attr_bus = 16'h0000;
 end
 
 //sprite data ROM
-wire    [7:0]   objrom0_q, objrom1_q;
+wire    [7:0]   objrom0_do, objrom1_do;
 
 //intel D27128
 SuprLoco_PROM #(.AW(14), .DW(8), .simhexfile({PATH, "epr-5229.txt"})) u_objrom0 (
@@ -526,7 +690,7 @@ SuprLoco_PROM #(.AW(14), .DW(8), .simhexfile({PATH, "epr-5229.txt"})) u_objrom0 
     .i_PROG_WR                  (                           ),
 
     .i_ADDR                     (obj_attr_bus[13:0]         ),
-    .o_DOUT                     (objrom0_q                  ),
+    .o_DOUT                     (objrom0_do                 ),
     .i_RD                       (1'b1                       )
 );
 
@@ -540,7 +704,7 @@ SuprLoco_PROM #(.AW(13), .DW(8), .simhexfile({PATH, "epr-5230.txt"})) u_objrom1 
     .i_PROG_WR                  (                           ),
 
     .i_ADDR                     (obj_attr_bus[12:0]         ),
-    .o_DOUT                     (objrom1_q                  ),
+    .o_DOUT                     (objrom1_do                 ),
     .i_RD                       (1'b1                       )
 );
 
@@ -552,14 +716,15 @@ always @(posedge clk40m) begin
     else begin if(clk5m_ncen) begin
         if(!ontrf) objdata_reg <= 8'h00;
         else begin
-            if(cwen) objdata_reg <= obj_attr_bus[14] ? objrom1_q : objrom0_q;
+            if(cwen) objdata_reg <= obj_attr_bus[14] ? objrom1_do : objrom0_do;
         end
     end end 
 end
 
-
 //select pixel nibble
 wire    [3:0]   objdata_nibble = swap ? objdata[7:4] : objdata[3:0];
+reg     [3:0]   objdata_nibble_z;
+always @(posedge clk40m) if(clk5m_ncen) objdata_nibble_z <= objdata_nibble;
 
 //object X pos counter
 reg             obj_xposcntr_cnt;
@@ -583,8 +748,67 @@ assign  ptend = &{objdata_nibble} | obj_xposcntr_cout; //de morgan
 
 
 
-wire    [3:0]   objpx; assign objpx = 4'hF;
+///////////////////////////////////////////////////////////
+//////  Sprite line buffer
+////
 
+//object pixel transparent flag
+reg             obj_transparent;
+always @(posedge clk40m) if(clk5m_ncen) obj_transparent <= objdata_nibble == 4'h0 || objdata_nibble == 4'hF;
+
+//line select
+wire            obj_read_evenbuf = ~vcntr[0];
+wire            obj_read_oddbuf = vcntr[0];
+
+/*
+    LINE BUFFER RW TIMING DESCRIPTION(ORIGINAL PCB)
+
+    WHEN WRITING SPRITES
+    CLK5Mp      ___|¯¯¯¯¯¯¯¯¯¯¯|___________________|¯¯¯¯¯¯¯¯¯¯¯|___________________|¯¯¯¯¯¯¯¯
+    RAM /CS     ¯¯¯|___________|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|___________|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|________
+    RAM /WR     ¯¯¯|___________|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|___________|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|________
+                   <-----------> <---- RAM WRITE WINDOW
+
+    WEHN READING SPRITES
+    CLK5Mp      ___|¯¯¯¯¯¯¯¯¯¯¯|___________________|¯¯¯¯¯¯¯¯¯¯¯|___________________|¯¯¯¯¯¯¯¯
+    RAM /CS     ____________________________________________________________________________
+    RAM /WR     ¯¯¯|___________|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|___________|¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯¯|________
+                   <----------->                      <---- RAM WRITE WINDOW(initialize with 0xF)
+                               <------------------->  <---- RAM READING WINDOW             
+                                                   ^  <---- RAM OUTPUT DATA LATCHING TIMING
+*/
+
+//EVEN sprite line buffer(left)
+wire    [8:0]   obj_evenbuf_addr = obj_read_evenbuf ? {vclk, hcntr} : {obj_transparent, obj_xposcntr};
+wire    [3:0]   obj_evenbuf_di = obj_read_evenbuf ? 4'hF : objdata_nibble_z;
+wire    [3:0]   obj_evenbuf_do;
+SuprLoco_SRAM #(.AW(9), .DW(4), .simhexfile()) u_obj_evenbuf (
+    .i_MCLK                     (clk40m                     ),
+
+    .i_ADDR                     (obj_evenbuf_addr           ),
+    .i_DIN                      (obj_evenbuf_di             ),
+    .o_DOUT                     (obj_evenbuf_do             ),
+    .i_RD                       (1'b1                       ),
+    .i_WR                       (clk5m_ncen                 )
+);
+
+//ODD sprite line buffer(right)
+wire    [8:0]   obj_oddbuf_addr = obj_read_oddbuf ? {vclk, hcntr} : {obj_transparent, obj_xposcntr};
+wire    [3:0]   obj_oddbuf_di = obj_read_oddbuf ? 4'hF : objdata_nibble_z;
+wire    [3:0]   obj_oddbuf_do;
+SuprLoco_SRAM #(.AW(9), .DW(4), .simhexfile()) u_obj_oddbuf (
+    .i_MCLK                     (clk40m                     ),
+
+    .i_ADDR                     (obj_oddbuf_addr            ),
+    .i_DIN                      (obj_oddbuf_di              ),
+    .o_DOUT                     (obj_oddbuf_do              ),
+    .i_RD                       (1'b1                       ),
+    .i_WR                       (clk5m_ncen                 )
+);
+
+//sprite pixel data output latch
+reg     [3:0]   objpx;
+always @(posedge clk40m) if(clk5m_pcen) objpx <= obj_read_evenbuf ? obj_evenbuf_do : obj_oddbuf_do;
 
 
 
@@ -613,7 +837,7 @@ end
 
 wire            palrom_banksel; assign palrom_banksel = 1'b1;
 wire    [8:0]   palrom_addr = {palrom_banksel, pxsel, palcode_z, tilecode_z[7], pxout};
-wire    [7:0]   palrom_q;
+wire    [7:0]   palrom_do;
 SuprLoco_PROM #(.AW(9), .DW(8), .simhexfile({PATH, "pr-5220.txt"})) u_palrom (
     .i_MCLK                     (clk40m                     ),
 
@@ -623,7 +847,7 @@ SuprLoco_PROM #(.AW(9), .DW(8), .simhexfile({PATH, "pr-5220.txt"})) u_palrom (
     .i_PROG_WR                  (                           ),
 
     .i_ADDR                     (palrom_addr                ),
-    .o_DOUT                     (palrom_q                   ),
+    .o_DOUT                     (palrom_do                  ),
     .i_RD                       (1'b1                       )
 );
 
@@ -641,7 +865,7 @@ always @(posedge clk40m) if(clk5m_ncen) begin
     screen_blank_q <= screen_blank_d;
 
     if(screen_blank) final_px_reg <= 8'h00;
-    else final_px_reg <= palrom_q;
+    else final_px_reg <= palrom_do;
 
     o_VIDEO_EN <= ~screen_blank;
 end
@@ -650,6 +874,32 @@ assign  o_VIDEO_CEN = clk5m_ncen;
 assign  o_VIDEO_R = final_px_q[2:0];
 assign  o_VIDEO_G = final_px_q[5:3];
 assign  o_VIDEO_B = {final_px_q[7:6], 1'b0};
+
+
+
+///////////////////////////////////////////////////////////
+//////  Read bus selector
+////
+
+always @(*) begin
+    mcpu_rdbus = 8'h00;
+
+    case(active_device_id)
+        PGMROM0: mcpu_rdbus = pgmrom0_do;
+        PGMROM1: mcpu_rdbus = pgmrom1_do;
+        DATAROM: mcpu_rdbus = datarom_do;
+        OBJRAM : mcpu_rdbus = mcpu_addr[0] ? objram_do[15:8] : objram_do[7:0];
+        TMRAM  : mcpu_rdbus = tmram_do;
+        MAINRAM: mcpu_rdbus = mainram_do;
+        IO_SYS : mcpu_rdbus = 8'hFF;
+        IO_P1  : mcpu_rdbus = 8'hFF;
+        IO_P2  : mcpu_rdbus = 8'hFF;
+        IO_DIP : mcpu_rdbus = 8'hFF;
+        IO_PPI : mcpu_rdbus = 8'hFF;
+        INVALID: mcpu_rdbus = 8'hFF;
+        default: mcpu_rdbus = 8'hFF;
+    endcase
+end
 
 
 endmodule

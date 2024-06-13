@@ -16,9 +16,13 @@ always @(posedge i_MCLK) begin
     end
 end
 
+integer i;
 initial begin
     if( simhexfile != "" ) begin
         $readmemh(simhexfile, RAM);
+    end
+    else begin
+        for(i=0; i<2**AW; i=i+1) RAM[i] = {DW{1'b0}};
     end
 end
 
