@@ -1,0 +1,3 @@
+set_global_assignment -name QIP_FILE rtl/SuprLoco.qip
+set_global_assignment -name SDC_FILE SuprLoco.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE SuprLoco.sv

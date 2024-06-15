@@ -1006,13 +1006,12 @@ end
 
 //clock enables
 reg             scpu_prescaler_bit1_pcen, scpu_prescaler_bit1_ncen;
-reg             scpu_prescaler_bit3_pcen, scpu_prescaler_bit3_ncen;
+reg             scpu_prescaler_bit3_pcen;
 always @(posedge clk40m) if(clk20m_ncen) begin
     scpu_prescaler_bit1_pcen <= scpu_prescaler[2:0] == 3'b000;
     scpu_prescaler_bit1_ncen <= scpu_prescaler[2:0] == 3'b010;
 
     scpu_prescaler_bit3_pcen <= scpu_prescaler == 4'b0011;
-    scpu_prescaler_bit3_ncen <= scpu_prescaler == 4'b1011;
 end
 
 wire            scpu_pcen = scpu_prescaler_bit1_ncen & clk20m_ncen;
