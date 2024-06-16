@@ -228,8 +228,7 @@ localparam CONF_STR = {
 
     "P1OA,VGA Scaler,off,on;",
     "P1O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
-    "-;",
-    "ON,Flip,normal,flip;",
+
     "-;",
     "DIP;",
     "-;",

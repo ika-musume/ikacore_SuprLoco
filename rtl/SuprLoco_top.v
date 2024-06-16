@@ -1006,12 +1006,13 @@ end
 
 //clock enables
 reg             scpu_prescaler_bit1_pcen, scpu_prescaler_bit1_ncen;
-reg             scpu_prescaler_bit3_pcen;
+reg             scpu_prescaler_bit3_pcen, scpu_prescaler_bit3_ncen;
 always @(posedge clk40m) if(clk20m_ncen) begin
     scpu_prescaler_bit1_pcen <= scpu_prescaler[2:0] == 3'b000;
     scpu_prescaler_bit1_ncen <= scpu_prescaler[2:0] == 3'b010;
 
     scpu_prescaler_bit3_pcen <= scpu_prescaler == 4'b0011;
+    scpu_prescaler_bit3_ncen <= scpu_prescaler == 4'b1011;
 end
 
 wire            scpu_pcen = scpu_prescaler_bit1_ncen & clk20m_ncen;
@@ -1098,9 +1099,10 @@ SuprLoco_SRAM #(.AW(11), .DW(8), .simhexfile()) u_sndram (
     .i_WR                       (scpu_addr[15:13] == 3'b100 & ~scpu_wr_n)
 );
 
-wire signed     [10:0]  sn76489_a_snd, sn76489_b_snd;
+
 wire            sn76489_a_rdy, sn76489_b_rdy;
 assign  scpu_wait_n = sn76489_a_rdy & sn76489_b_rdy;
+wire signed     [10:0]  sn76489_a_snd, sn76489_b_snd;
 jt89 u_sn76489_a (
     .rst                        (~softrst_n                 ),
     .clk                        (clk40m                     ),
@@ -1127,7 +1129,34 @@ jt89 u_sn76489_b (
     .ready                      (sn76489_b_rdy              )
 );
 
-always @(posedge clk40m) o_SOUND <= (sn76489_a_snd + sn76489_b_snd) * 16'sd4;
+/*
+wire signed     [13:0]  sn76489_a_snd, sn76489_b_snd;
+sn76489_audio u_sn76489_a (
+    .clk_i                      (clk40m                     ),
+    .en_clk_psg_i               (sn76489_a_pcen             ),
+
+    .wr_n_i                     (scpu_wr_n                  ),
+    .ce_n_i                     (~(scpu_addr[15:13] == 3'b101)),
+    .data_i                     (scpu_wrbus                 ),
+
+    .ready_o                    (sn76489_a_rdy              ),
+    .pcm14s_o                   (sn76489_a_snd              )
+);
+
+sn76489_audio u_sn76489_b (
+    .clk_i                      (clk40m                     ),
+    .en_clk_psg_i               (sn76489_b_pcen             ),
+
+    .wr_n_i                     (scpu_wr_n                  ),
+    .ce_n_i                     (~(scpu_addr[15:13] == 3'b110)),
+    .data_i                     (scpu_wrbus                 ),
+
+    .ready_o                    (sn76489_b_rdy              ),
+    .pcm14s_o                   (sn76489_b_snd              )
+);
+*/
+
+always @(posedge clk40m) o_SOUND <= (sn76489_a_snd + sn76489_b_snd) * 4'sd7;
 
 
 

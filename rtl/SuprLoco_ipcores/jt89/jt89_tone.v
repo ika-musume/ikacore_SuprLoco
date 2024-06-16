@@ -32,7 +32,7 @@ module jt89_tone(
     output reg          out
 );
 
-parameter DEAF_TONE = 5; // The DAC will not react to tones this fast
+parameter DEAF_TONE = 0; // The DAC will not react to tones this fast
 
 reg [9:0] cnt;
 reg last_out;
